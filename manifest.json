@@ -1,0 +1,78 @@
+{
+  "manifest_version": 3,
+  "name": "Streaming IMDb Ratings",
+  "version": "2.0.0",
+  "description": "Displays IMDb ratings inside a vote-tiered star across Netflix, Prime Video, Disney+, and SkyShowtime.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.omdbapi.com/*",
+    "http://www.omdbapi.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.netflix.com/*"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "js": [
+        "content-shared.js",
+        "content-netflix.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.disneyplus.com/*"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "js": [
+        "content-shared.js",
+        "content-disney.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.skyshowtime.com/*"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "js": [
+        "content-shared.js",
+        "content-skyshowtime.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.primevideo.com/*",
+        "*://*.amazon.com/*",
+        "*://*.amazon.pl/*",
+        "*://*.amazon.co.uk/*"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "js": [
+        "content-shared.js",
+        "content-prime.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
