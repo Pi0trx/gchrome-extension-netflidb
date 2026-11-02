@@ -7,16 +7,16 @@
     "M 20.00 3.30 L 25.53 13.20 L 36.64 15.39 L 28.94 23.70 L 30.29 34.96 " +
     "L 20.00 30.20 L 9.71 34.96 L 11.06 23.70 L 3.36 15.39 L 14.47 13.20 Z";
 
-  // Symmetric award statuette silhouette on a 2-tier pedestal in viewBox="0 0 14 20"
+  // Symmetric award statuette silhouette on a 2-tier pedestal centered at x=7.5 in viewBox="0 0 15 20"
   const OSCAR_STATUETTE_PATH_D =
-    "M 7.00 1.30 C 8.05 1.30 8.80 2.05 8.80 3.05 C 8.80 3.85 8.30 4.50 7.65 4.75 " +
-    "L 7.80 5.25 C 9.35 5.45 10.60 6.15 10.60 7.25 C 10.60 8.15 9.95 9.10 9.00 9.65 " +
-    "L 8.75 11.20 L 8.25 15.60 L 9.80 15.60 C 10.10 15.60 10.30 15.80 10.30 16.10 " +
-    "L 10.30 17.00 L 11.30 17.00 C 11.65 17.00 11.90 17.25 11.90 17.60 L 11.90 18.70 " +
-    "L 2.10 18.70 L 2.10 17.60 C 2.10 17.25 2.35 17.00 2.70 17.00 L 3.70 17.00 " +
-    "L 3.70 16.10 C 3.70 15.80 3.90 15.60 4.20 15.60 L 5.75 15.60 L 5.25 11.20 " +
-    "L 5.00 9.65 C 4.05 9.10 3.40 8.15 3.40 7.25 C 3.40 6.15 4.65 5.45 6.20 5.25 " +
-    "L 6.35 4.75 C 5.70 4.50 5.20 3.85 5.20 3.05 C 5.20 2.05 5.95 1.30 7.00 1.30 Z";
+    "M 7.50 1.40 C 8.55 1.40 9.30 2.15 9.30 3.15 C 9.30 3.95 8.80 4.55 8.15 4.80 " +
+    "L 8.30 5.30 C 9.85 5.50 11.10 6.20 11.10 7.30 C 11.10 8.20 10.45 9.15 9.50 9.70 " +
+    "L 9.25 11.20 L 8.75 15.55 L 10.30 15.55 C 10.60 15.55 10.80 15.75 10.80 16.05 " +
+    "L 10.80 16.95 L 11.80 16.95 C 12.15 16.95 12.40 17.20 12.40 17.55 L 12.40 18.60 " +
+    "L 2.60 18.60 L 2.60 17.55 C 2.60 17.20 2.85 16.95 3.20 16.95 L 4.20 16.95 " +
+    "L 4.20 16.05 C 4.20 15.75 4.40 15.55 4.70 15.55 L 6.25 15.55 L 5.75 11.20 " +
+    "L 5.50 9.70 C 4.55 9.15 3.90 8.20 3.90 7.30 C 3.90 6.20 5.15 5.50 6.70 5.30 " +
+    "L 6.85 4.80 C 6.20 4.55 5.70 3.95 5.70 3.15 C 5.70 2.15 6.45 1.40 7.50 1.40 Z";
 
   const TIER_CLASSES = [
     "nf-imdb-tier--bronze",
@@ -53,7 +53,7 @@
   function createOscarStatuetteSvg() {
     const svg = document.createElementNS(SVG_NS, "svg");
     svg.setAttribute("class", "nf-imdb-oscar-svg");
-    svg.setAttribute("viewBox", "0 0 14 20");
+    svg.setAttribute("viewBox", "0 0 15 20");
     svg.setAttribute("aria-hidden", "true");
     svg.setAttribute("focusable", "false");
 
@@ -80,7 +80,7 @@
 
   function renderOscarCounter(badge, awardsText, isDetailModal) {
     removeAdjacentOscarWrapper(badge);
-    if (!isDetailModal || !badge?.isConnected) return;
+    if (!badge?.isConnected) return;
 
     const wins = parseOscarWins(awardsText);
     if (wins <= 0) return;
@@ -93,7 +93,8 @@
     stack.className = "nf-imdb-oscar-stack";
     stack.setAttribute("aria-hidden", "true");
 
-    const statuetteCount = Math.min(wins, 3);
+    // Detail view: exact win count (e.g., 11 SVGs); Hover card: capped at 3 SVGs
+    const statuetteCount = isDetailModal === true ? wins : Math.min(wins, 3);
     for (let i = 0; i < statuetteCount; i++) {
       stack.appendChild(createOscarStatuetteSvg());
     }
@@ -158,8 +159,8 @@
   }
 
   /**
-   * Injects or updates the shared IMDb star badge (and optional detail-view Oscar stack)
-   * inside a target container element and fetches its rating/votes/awards from background.js.
+   * Injects or updates the shared IMDb star badge and stacked Oscar win counter
+   * inside a target container element and fetches rating/votes/awards from background.js.
    *
    * @param {string} title
    * @param {string} [year]
@@ -243,7 +244,7 @@
 
   /**
    * Injects a semi-transparent frosted dark pill in the top-right corner of a bare poster container
-   * (never treated as a detail modal, so Oscar counters never render on poster hover pills).
+   * (uses isDetailModal: false so Oscar stacks cap at 3 on hover cards).
    *
    * @param {string} title
    * @param {string} [year]

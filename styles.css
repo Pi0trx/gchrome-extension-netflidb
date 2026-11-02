@@ -21,6 +21,10 @@ html.nf-platform-skyshowtime {
   --oscar-cutout-color: #0e0e12;
 }
 
+.nf-imdb-poster-pill {
+  --oscar-cutout-color: #121212;
+}
+
 /* Never display injected elements during active video playback or fullscreen across all platforms */
 :fullscreen .nf-imdb-badge,
 :fullscreen .nf-imdb-oscar-wrapper,
@@ -46,13 +50,6 @@ disney-web-player .nf-imdb-oscar-wrapper,
 .video-player-container .nf-imdb-oscar-wrapper,
 .gsp-player .nf-imdb-badge,
 .gsp-player .nf-imdb-oscar-wrapper {
-  display: none !important;
-}
-
-/* Never display Oscar counter on hover mini-modals or poster hover pills */
-.mini-modal .nf-imdb-oscar-wrapper,
-[data-uia="preview-modal-container-mini-modal"] .nf-imdb-oscar-wrapper,
-.nf-imdb-poster-pill .nf-imdb-oscar-wrapper {
   display: none !important;
 }
 
@@ -150,6 +147,10 @@ a:focus-visible .nf-imdb-poster-pill,
   width: 32px;
   height: 32px;
   margin: 0;
+}
+
+.nf-imdb-poster-pill > .nf-imdb-oscar-wrapper {
+  margin-left: 5px;
 }
 
 .nf-imdb-star {
@@ -362,7 +363,7 @@ a:focus-visible .nf-imdb-poster-pill,
   }
 }
 
-/* Stacked Visual Oscar Counter (expanded detail pages only) */
+/* Stacked Visual Oscar Counter (Hover: max 3 SVGs; Detail: exact wins count SVGs) */
 .nf-imdb-oscar-wrapper {
   display: inline-flex;
   align-items: center;
@@ -389,22 +390,23 @@ a:focus-visible .nf-imdb-poster-pill,
 }
 
 .nf-imdb-oscar-stack svg ~ svg {
-  margin-left: -6px;
+  margin-left: -8px;
 }
 
 .nf-imdb-oscar-stack svg,
 .nf-imdb-oscar-stack svg path {
   fill: #e5a917;
   stroke: var(--oscar-cutout-color, #181818);
-  stroke-width: 1.5px;
+  stroke-width: 2px;
   stroke-linejoin: round;
   paint-order: stroke fill;
 }
 
 .nf-imdb-oscar-total {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 800;
   color: #e5a917;
   line-height: 1;
+  letter-spacing: -0.3px;
   font-family: "Netflix Sans", "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
 }
