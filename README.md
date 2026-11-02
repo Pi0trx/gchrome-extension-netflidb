@@ -25,7 +25,7 @@ Titles that have won Academy Awards feature a custom, golden statuette icon stac
 
 ## Installation
 
-> **Note on API Keys:** Because this is a public repository, the `config.js` file containing the OMDb API keys is excluded via `.gitignore` for security. You must add your own free keys to run the extension.
+> **Note on API Keys:** Because this is a public repository, the `config.js` file containing the OMDb API keys is excluded via `.gitignore` for security. You must add your own free keys to run the extension. Get them here: https://omdbapi.com/apikey.aspx
 
 1. **Download the Extension:** Clone this repository or download it as a `.zip` and extract it to a permanent folder on your computer.
 2. **Add Your API Keys:** Inside the extension folder, create a new file named exactly `config.js` and paste the following code, replacing the placeholder strings with your keys from [OMDb API](https://www.omdbapi.com/):
@@ -34,6 +34,7 @@ Titles that have won Academy Awards feature a custom, golden statuette icon stac
      "YOUR_KEY_1",
      "YOUR_KEY_2" // Add backups for automatic failover
    ];
+3. **Setup the Extension** Go to chrome://extensions/, enable Developer Mode [ON] (right upper corner), and then [Load unpacked] and choose the unzipped folder
 
 ## Architecture
 
