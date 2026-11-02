@@ -19,7 +19,8 @@
     "expand",
     "netflix",
     "modal",
-    "dialog"
+    "dialog",
+    "featured content"
   ]);
 
   /** @type {Map<string, string>} */
@@ -54,7 +55,11 @@
     if (!candidate || typeof candidate !== "string") return false;
     const trimmed = candidate.trim();
     if (!trimmed || trimmed.length > 180) return false;
-    if (IGNORED_LABELS.has(trimmed.toLowerCase())) return false;
+    const lower = trimmed.toLowerCase();
+    if (IGNORED_LABELS.has(lower)) return false;
+    // Reject dynamic action labels like "Add <Title> to My List" or "Audio Description"
+    if (/^(?:add|remove)\b.*\blist$/i.test(trimmed)) return false;
+    if (/^(?:audio description|maturity rating)\b/i.test(trimmed)) return false;
     return true;
   }
 
@@ -70,10 +75,30 @@
     videoIdToTitle.set(videoId, cleanTitle);
   }
 
-  function extractVideoIdFromElement(root) {
+  function isSubCardElement(el) {
+    return Boolean(
+      el.closest(
+        ".moreLikeThis--container, .sims--container, .titleCard--container, .trailersAndMore--container, .episodeSelector, .episodes-container"
+      )
+    );
+  }
+
+  function queryOutsideSubCards(root, selector) {
+    const nodes = root.querySelectorAll(selector);
+    for (const node of nodes) {
+      if (!isSubCardElement(node)) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  function extractVideoIdFromElement(root, excludeSubCards = false) {
     if (!root) return "";
 
-    const link = root.querySelector('a[href*="/watch/"], a[href*="/title/"]');
+    const link = excludeSubCards
+      ? queryOutsideSubCards(root, 'a[href*="/watch/"], a[href*="/title/"]')
+      : root.querySelector('a[href*="/watch/"], a[href*="/title/"]');
     const selfHref = root.matches?.('a[href*="/watch/"], a[href*="/title/"]')
       ? root.getAttribute("href")
       : null;
@@ -83,7 +108,9 @@
 
     const trackingNode = root.matches?.("[data-ui-tracking-context]")
       ? root
-      : root.querySelector("[data-ui-tracking-context]");
+      : excludeSubCards
+        ? queryOutsideSubCards(root, "[data-ui-tracking-context]")
+        : root.querySelector("[data-ui-tracking-context]");
     const rawTracking = trackingNode?.getAttribute("data-ui-tracking-context");
     if (rawTracking) {
       try {
@@ -107,11 +134,16 @@
     const ariaLabel = ariaLink?.getAttribute("aria-label");
     if (isValidTitle(ariaLabel)) return ariaLabel.trim();
 
-    const fallbackText = card.querySelector(".fallback-text")?.textContent;
+    const selfAria = card.getAttribute("aria-label");
+    if (isValidTitle(selfAria)) return selfAria.trim();
+
+    const fallbackText = card.querySelector(".fallback-text, .titleCard-title")?.textContent;
     if (isValidTitle(fallbackText)) return fallbackText.trim();
 
     const imgAlt = card
-      .querySelector(".billboard-title img[alt], img.boxart-image[alt], .boxart-container img[alt]")
+      .querySelector(
+        ".billboard-title img[alt], .titleCard-imageWrapper img[alt], img.boxart-image[alt], .boxart-container img[alt]"
+      )
       ?.getAttribute("alt");
     if (isValidTitle(imgAlt)) return imgAlt.trim();
 
@@ -126,7 +158,7 @@
     if (!(target instanceof Element)) return;
 
     const card = target.closest(
-      '.title-card-container, .title-card, .slider-item, [data-uia="title-card"], .billboard-row, .lolomoRow_title_card'
+      '.title-card-container, .title-card, .slider-item, [data-uia="title-card"], .billboard-row, .lolomoRow_title_card, .titleCard--container'
     );
     if (!card) return;
 
@@ -145,12 +177,8 @@
     }
   }
 
-  function isSubCardElement(el) {
-    return Boolean(
-      el.closest(
-        ".moreLikeThis--container, .sims--container, .titleCard--container, .trailersAndMore--container, .episodeSelector, .episodes-container"
-      )
-    );
+  function isBillboardElement(el) {
+    return el.classList.contains("billboard-row") || el.classList.contains("billboard");
   }
 
   function isDetailModalElement(modal) {
@@ -199,7 +227,7 @@
   }
 
   function extractModalVideoId(modal, isDetailModal) {
-    const domVideoId = extractVideoIdFromElement(modal);
+    const domVideoId = extractVideoIdFromElement(modal, true);
     if (domVideoId) return domVideoId;
 
     if (isDetailModal) {
@@ -233,7 +261,8 @@
       'img[class*="titleTreatment"][alt]'
     ];
     for (const sel of logoSelectors) {
-      const alt = modal.querySelector(sel)?.getAttribute("alt");
+      const node = queryOutsideSubCards(modal, sel);
+      const alt = node?.getAttribute("alt");
       if (isValidTitle(alt)) return alt.trim();
     }
 
@@ -246,7 +275,7 @@
       ".bob-title"
     ];
     for (const sel of artSelectors) {
-      const node = modal.querySelector(sel);
+      const node = queryOutsideSubCards(modal, sel);
       const val = node?.tagName === "IMG" ? node.getAttribute("alt") : node?.textContent;
       if (isValidTitle(val)) return val.trim();
     }
@@ -260,6 +289,7 @@
     // 5. Descriptive aria-label on expand/more-info controls inside the modal
     const labeledButtons = modal.querySelectorAll("[aria-label], [title]");
     for (const btn of labeledButtons) {
+      if (isSubCardElement(btn)) continue;
       const raw = btn.getAttribute("aria-label") || btn.getAttribute("title") || "";
       const infoMatch = raw.match(/^(?:more info about|details for|expand)\s+(.+)$/i);
       if (infoMatch && isValidTitle(infoMatch[1])) {
@@ -286,19 +316,23 @@
     return "";
   }
 
+  function parseMediaTypeFromDurationText(durationText) {
+    if (!durationText) return "";
+    if (/\b(seasons?|episodes?|series|parts?|volumes?|collection)\b/i.test(durationText)) {
+      return "series";
+    }
+    if (/^\d+\s*h(\s*\d+\s*m(in)?)?$/i.test(durationText) || /^\d+\s*m(in)?$/i.test(durationText)) {
+      return "movie";
+    }
+    return "";
+  }
+
   function extractMediaType(modal, metadataRow, isDetailModal) {
     const durationEl =
-      metadataRow.querySelector(".duration") || modal.querySelector(".videoMetadata--container .duration");
-    const durationText = durationEl?.textContent?.trim() || "";
-
-    if (durationText) {
-      if (/\b(seasons?|episodes?|series|parts?|volumes?|collection)\b/i.test(durationText)) {
-        return "series";
-      }
-      if (/^\d+\s*h(\s*\d+\s*m(in)?)?$/i.test(durationText) || /^\d+\s*m(in)?$/i.test(durationText)) {
-        return "movie";
-      }
-    }
+      metadataRow.querySelector(".duration") ||
+      queryOutsideSubCards(modal, ".videoMetadata--container .duration");
+    const parsed = parseMediaTypeFromDurationText(durationEl?.textContent?.trim() || "");
+    if (parsed) return parsed;
 
     if (isDetailModal && modal.querySelector('.episodeSelector, [data-uia="episode-selector"]')) {
       return "series";
@@ -307,16 +341,297 @@
     return "";
   }
 
-  function extractYear(metadataRow, modal) {
+  function extractYear(metadataRow, fallbackRoot = null) {
     const yearEl =
       metadataRow.querySelector('.year, .item-year, [data-uia="item-year"]') ||
-      modal.querySelector('.previewModal--detailsMetadata .year, .previewModal--detailsMetadata .item-year');
+      (fallbackRoot
+        ? queryOutsideSubCards(
+            fallbackRoot,
+            ".previewModal--detailsMetadata .year, .previewModal--detailsMetadata .item-year"
+          )
+        : null);
     const text = yearEl?.textContent?.trim() || "";
     const match = text.match(/^(19|20)\d{2}$/);
     return match ? match[0] : "";
   }
 
+  // --- Feature 1: Homepage Hero Banner (Billboard) ---
+
+  function findBillboardMetadataRow(billboard) {
+    const selectors = [
+      ".info-meta-wrapper .meta",
+      ".billboard .meta",
+      ".meta",
+      ".info-meta-wrapper",
+      ".videoMetadata--second-line",
+      ".videoMetadata--line",
+      ".videoMetadata--container",
+      ".billboard-links",
+      '[data-uia="billboard-links"]'
+    ];
+    for (const sel of selectors) {
+      const candidate = billboard.querySelector(sel);
+      if (candidate) return candidate;
+    }
+    return null;
+  }
+
+  function extractBillboardTitle(billboard) {
+    // Primary: .billboard-title img[alt]
+    const primaryAlt = billboard.querySelector(".billboard-title img[alt]")?.getAttribute("alt");
+    if (isValidTitle(primaryAlt)) return primaryAlt.trim();
+
+    const secondaryLogo = billboard
+      .querySelector('[data-uia="billboard-title"] img[alt], .title-logo[alt], .billboard-title img[title]')
+      ?.getAttribute("alt") ||
+      billboard.querySelector(".billboard-title img[title]")?.getAttribute("title");
+    if (isValidTitle(secondaryLogo)) return secondaryLogo.trim();
+
+    const titleText = billboard.querySelector(".billboard-title")?.textContent;
+    if (isValidTitle(titleText)) return titleText.trim();
+
+    const videoId = extractVideoIdFromElement(billboard);
+    if (videoId && videoIdToTitle.has(videoId)) {
+      return videoIdToTitle.get(videoId);
+    }
+
+    const labeledControls = billboard.querySelectorAll("[aria-label], [title]");
+    for (const ctrl of labeledControls) {
+      const raw = ctrl.getAttribute("aria-label") || ctrl.getAttribute("title") || "";
+      const infoMatch = raw.match(/^(?:more info about|details for)\s+(.+)$/i);
+      if (infoMatch && isValidTitle(infoMatch[1])) {
+        return infoMatch[1].trim();
+      }
+    }
+
+    return "";
+  }
+
+  function extractBillboardYear(billboard, metadataRow) {
+    const yearEl =
+      metadataRow.querySelector('.year, .item-year, [data-uia="item-year"]') ||
+      billboard.querySelector('.year, .item-year, [data-uia="item-year"]');
+    if (yearEl) {
+      const m = (yearEl.textContent || "").trim().match(/^(19|20)\d{2}$/);
+      if (m) return m[0];
+    }
+
+    if (!metadataRow.classList.contains("billboard-links")) {
+      const inlineMatch = (metadataRow.textContent || "").match(/\b(19|20)\d{2}\b/);
+      if (inlineMatch) return inlineMatch[0];
+    }
+
+    return "";
+  }
+
+  function extractBillboardMediaType(billboard, metadataRow) {
+    const durationEl =
+      metadataRow.querySelector(".duration") || billboard.querySelector(".duration");
+    const fromDuration = parseMediaTypeFromDurationText(durationEl?.textContent?.trim() || "");
+    if (fromDuration) return fromDuration;
+
+    const suppMsg = billboard.querySelector(".supplemental-message")?.textContent || "";
+    if (/\b(tv\s+shows?|series|seasons?|episodes?)\b/i.test(suppMsg)) {
+      return "series";
+    }
+    if (/\bmovies?\b/i.test(suppMsg)) {
+      return "movie";
+    }
+
+    return "";
+  }
+
+  function syncBillboardButtonMargin(metadataRow) {
+    if (
+      !metadataRow.classList.contains("billboard-links") &&
+      metadataRow.getAttribute("data-uia") !== "billboard-links"
+    ) {
+      return;
+    }
+    const refBtn = metadataRow.querySelector("button, a");
+    if (!refBtn || typeof window.getComputedStyle !== "function") return;
+    const mb = window.getComputedStyle(refBtn).marginBottom;
+    if (mb && mb !== "0px") {
+      metadataRow.style.setProperty("--nf-billboard-btn-mb", mb);
+    } else {
+      metadataRow.style.removeProperty("--nf-billboard-btn-mb");
+    }
+  }
+
+  function processBillboard(billboard) {
+    const metadataRow = findBillboardMetadataRow(billboard);
+    if (!metadataRow) return;
+
+    const title = extractBillboardTitle(billboard);
+    if (!title) return;
+
+    const videoId = extractVideoIdFromElement(billboard);
+    if (videoId) {
+      rememberVideoTitle(videoId, title);
+    }
+
+    const mediaType = extractBillboardMediaType(billboard, metadataRow);
+    const year = extractBillboardYear(billboard, metadataRow);
+
+    syncBillboardButtonMargin(metadataRow);
+
+    window.injectImdbBadge(title, year, mediaType, metadataRow, {
+      isDetailModal: false,
+      shouldAbort: isActivelyWatching
+    });
+  }
+
+  // --- Feature 2: "More Like This" / Recommended Cards ---
+
+  function isEpisodeOrTrailerCard(el) {
+    if (
+      el.closest(
+        '.episodeSelector, .episodeSelector-container, .episodes-container, [data-uia="episode-selector"], .trailersAndMore--container, [data-uia="trailers-and-more"], .episode-item'
+      )
+    ) {
+      return true;
+    }
+    if (el.querySelector(".titleCard-title_index")) {
+      return true;
+    }
+    return false;
+  }
+
+  function findRecCardMetadataRow(card) {
+    const lineSelectors = [
+      ".videoMetadata--second-line",
+      ".videoMetadata--line",
+      ".titleCard--metadataWrapper .meta",
+      ".meta"
+    ];
+
+    for (const selector of lineSelectors) {
+      const candidate = card.querySelector(selector);
+      if (candidate) return candidate;
+    }
+
+    const containers = card.querySelectorAll(".videoMetadata--container");
+    for (const container of containers) {
+      const hasSubLines = container.querySelector(".videoMetadata--second-line, .videoMetadata--line");
+      const hasMetaItems = container.querySelector(
+        ".maturity-rating, .maturity-number, .duration, .year, .item-year"
+      );
+      if (!hasSubLines && hasMetaItems) {
+        return container;
+      }
+    }
+
+    // Structural fallback: flex row holding year or maturity-rating inside the card's metadata wrapper
+    const metaAtom = card.querySelector(
+      ".titleCard--metadataWrapper .year, .titleCard--metadataWrapper .item-year, .titleCard--metadataWrapper .maturity-rating"
+    );
+    if (metaAtom?.parentElement && metaAtom.parentElement !== card) {
+      const parent = metaAtom.parentElement;
+      if (
+        parent.children.length === 1 &&
+        parent.parentElement &&
+        parent.parentElement !== card &&
+        !parent.parentElement.classList.contains("titleCard--metadataWrapper")
+      ) {
+        return parent.parentElement;
+      }
+      return parent;
+    }
+
+    return null;
+  }
+
+  function extractRecCardTitle(card) {
+    // 1. aria-label on the card link (excluding action buttons like Add to My List)
+    const cardLinks = card.querySelectorAll(
+      'a.slider-refocus[aria-label], a[href*="/watch/"][aria-label], a[href*="/title/"][aria-label], a[aria-label], [role="link"][aria-label]'
+    );
+    for (const link of cardLinks) {
+      if (link.closest(".buttonControls--container")) continue;
+      const aria = link.getAttribute("aria-label");
+      if (isValidTitle(aria)) return aria.trim();
+    }
+
+    // 2. aria-label on the .titleCard--container itself
+    const selfAria =
+      card.getAttribute("aria-label") ||
+      card.querySelector(".titleCard--container[aria-label]")?.getAttribute("aria-label");
+    if (isValidTitle(selfAria)) return selfAria.trim();
+
+    // 3. Fallback text spans inside the card
+    const textSelectors = [
+      ".fallback-text",
+      ".titleCard-title",
+      '[data-uia="titleCard-title"]',
+      ".video-title"
+    ];
+    for (const sel of textSelectors) {
+      const text = card.querySelector(sel)?.textContent;
+      if (isValidTitle(text)) return text.trim();
+    }
+
+    // 4. Card boxart / preview image alt text
+    const imgAlt = card
+      .querySelector(
+        ".titleCard-imageWrapper img[alt], img.boxart-image[alt], .boxart-container img[alt], img[alt]"
+      )
+      ?.getAttribute("alt");
+    if (isValidTitle(imgAlt)) return imgAlt.trim();
+
+    // 5. Tracking video_id lookup from previously seen cards
+    const videoId = extractVideoIdFromElement(card);
+    if (videoId && videoIdToTitle.has(videoId)) {
+      return videoIdToTitle.get(videoId);
+    }
+
+    return "";
+  }
+
+  function extractRecCardMediaType(card, metadataRow) {
+    const durationEl =
+      metadataRow.querySelector(".duration") ||
+      card.querySelector(".titleCard-imageWrapper .duration, .videoMetadata--container .duration, .duration");
+    return parseMediaTypeFromDurationText(durationEl?.textContent?.trim() || "");
+  }
+
+  function extractRecCardYear(card, metadataRow) {
+    const yearEl =
+      metadataRow.querySelector('.year, .item-year, [data-uia="item-year"]') ||
+      card.querySelector('.year, .item-year, [data-uia="item-year"]');
+    const text = yearEl?.textContent?.trim() || "";
+    const match = text.match(/^(19|20)\d{2}$/);
+    return match ? match[0] : "";
+  }
+
+  function processRecommendedCard(card) {
+    const metadataRow = findRecCardMetadataRow(card);
+    if (!metadataRow) return;
+
+    const title = extractRecCardTitle(card);
+    if (!title) return;
+
+    const videoId = extractVideoIdFromElement(card);
+    if (videoId) {
+      rememberVideoTitle(videoId, title);
+    }
+
+    const mediaType = extractRecCardMediaType(card, metadataRow);
+    const year = extractRecCardYear(card, metadataRow);
+
+    window.injectImdbBadge(title, year, mediaType, metadataRow, {
+      isDetailModal: false,
+      shouldAbort: isActivelyWatching
+    });
+  }
+
+  // --- Primary Modal Processing ---
+
   function processModal(modal) {
+    if (isBillboardElement(modal)) {
+      processBillboard(modal);
+      return;
+    }
+
     const isDetailModal = isDetailModalElement(modal);
     const metadataRow = findMetadataRow(modal, isDetailModal);
     if (!metadataRow) return;
@@ -374,20 +689,57 @@
       return;
     }
 
+    // 1. Primary loop: hover mini-modals, expanded detail modals, and homepage hero billboards
     const rawModals = Array.from(
       document.querySelectorAll(
-        '.previewModal--container, [data-uia="preview-modal-container-mini-modal"], [data-uia="preview-modal-container-detail-modal"], .bob-card'
+        '.previewModal--container, [data-uia="preview-modal-container-mini-modal"], [data-uia="preview-modal-container-detail-modal"], .bob-card, .billboard-row, .billboard'
       )
     );
-    if (rawModals.length === 0) return;
 
-    // Avoid processing both outer and inner matched containers for the same modal
-    const uniqueModals = rawModals.filter(
-      (m) => !rawModals.some((other) => other !== m && other.contains(m))
+    if (rawModals.length > 0) {
+      // Avoid processing both outer and inner matched containers (e.g. .billboard-row wrapping .billboard)
+      const uniqueModals = rawModals.filter(
+        (m) => !rawModals.some((other) => other !== m && other.contains(m))
+      );
+
+      for (const modal of uniqueModals) {
+        processModal(modal);
+      }
+    }
+
+    // 2. Secondary loop: "More Like This" / recommended cards as isolated entities
+    const rawRecCards = Array.from(
+      document.querySelectorAll(
+        ".titleCard--container, .moreLikeThis--container .ptrack-content, .sims--container .ptrack-content"
+      )
     );
 
-    for (const modal of uniqueModals) {
-      processModal(modal);
+    if (rawRecCards.length > 0) {
+      const uniqueRecCards = rawRecCards.filter((el) => {
+        if (isEpisodeOrTrailerCard(el)) return false;
+
+        if (el.classList.contains("titleCard--container")) {
+          return !el.parentElement?.closest(".titleCard--container");
+        }
+
+        // Skip .ptrack-content wrappers that wrap or sit inside a .titleCard--container
+        if (el.closest(".titleCard--container") || el.querySelector(".titleCard--container")) {
+          return false;
+        }
+
+        // Fallback when cards use .ptrack-content without .titleCard--container: keep only leaf card nodes with metadata
+        if (!findRecCardMetadataRow(el)) {
+          return false;
+        }
+        const hasNestedMetaCard = Array.from(el.querySelectorAll(".ptrack-content")).some(
+          (child) => child !== el && findRecCardMetadataRow(child)
+        );
+        return !hasNestedMetaCard;
+      });
+
+      for (const card of uniqueRecCards) {
+        processRecommendedCard(card);
+      }
     }
   }
 
@@ -425,4 +777,3 @@
     });
   }
 })();
-
